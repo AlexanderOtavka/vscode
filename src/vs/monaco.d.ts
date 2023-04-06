@@ -5778,6 +5778,7 @@ declare namespace monaco.editor {
 		 */
 		applyFontInfo(target: HTMLElement): void;
 		setBanner(bannerDomNode: HTMLElement | null, height: number): void;
+		continueProcessingDeliveryQueue(): void;
 	}
 
 	/**
@@ -6753,19 +6754,24 @@ declare namespace monaco.languages {
 		Explicit = 1
 	}
 
-	export interface InlineCompletionContext {
+	export class InlineCompletionContext {
 		/**
 		 * How the completion was triggered.
 		 */
 		readonly triggerKind: InlineCompletionTriggerKind;
 		readonly selectedSuggestionInfo: SelectedSuggestionInfo | undefined;
+		constructor(
+			/**
+			 * How the completion was triggered.
+			 */
+		triggerKind: InlineCompletionTriggerKind, selectedSuggestionInfo: SelectedSuggestionInfo | undefined);
 	}
 
 	export interface SelectedSuggestionInfo {
-		range: IRange;
-		text: string;
-		isSnippetText: boolean;
-		completionKind: CompletionItemKind;
+		readonly range: IRange;
+		readonly text: string;
+		readonly isSnippetText: boolean;
+		readonly completionKind: CompletionItemKind;
 	}
 
 	export interface InlineCompletion {

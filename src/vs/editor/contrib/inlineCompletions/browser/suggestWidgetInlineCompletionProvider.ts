@@ -4,17 +4,19 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { compareBy, findMaxBy, numberComparator } from 'vs/base/common/arrays';
-import { Emitter, Event } from 'vs/base/common/event';
+import { Event } from 'vs/base/common/event';
 import { Disposable } from 'vs/base/common/lifecycle';
 import { IActiveCodeEditor } from 'vs/editor/browser/editorBrowser';
 import { Position } from 'vs/editor/common/core/position';
 import { Range } from 'vs/editor/common/core/range';
-import { CompletionItemInsertTextRule, CompletionItemKind } from 'vs/editor/common/languages';
+import { Command, CompletionItemInsertTextRule, CompletionItemKind } from 'vs/editor/common/languages';
 import { SnippetParser } from 'vs/editor/contrib/snippet/browser/snippetParser';
 import { SnippetSession } from 'vs/editor/contrib/snippet/browser/snippetSession';
 import { CompletionItem } from 'vs/editor/contrib/suggest/browser/suggest';
 import { SuggestController } from 'vs/editor/contrib/suggest/browser/suggestController';
-import { minimizeInlineCompletion, NormalizedInlineCompletion, normalizedInlineCompletionsEquals } from './inlineCompletionToGhostText';
+import { IObservable, observableValue, transaction } from 'vs/base/common/observable';
+import { ISingleEditOperation } from 'vs/editor/common/core/editOperation';
+
 
 export interface SuggestWidgetState {
 	/**
@@ -24,9 +26,22 @@ export interface SuggestWidgetState {
 }
 
 export interface SuggestItemInfo {
-	normalizedInlineCompletion: NormalizedInlineCompletion;
 	isSnippetText: boolean;
 	completionItemKind: CompletionItemKind;
+
+	readonly filterText: string;
+	readonly command?: Command;
+	readonly range: Range;
+	readonly insertText: string;
+	readonly snippetInfo:
+	| {
+		snippet: string;
+		/* Could be different than the main range */
+		range: Range;
+	}
+	| undefined;
+
+	readonly additionalTextEdits: readonly ISingleEditOperation[];
 }
 
 export class SuggestWidgetInlineCompletionProvider extends Disposable {
@@ -34,18 +49,11 @@ export class SuggestWidgetInlineCompletionProvider extends Disposable {
 	private isShiftKeyPressed = false;
 	private _isActive = false;
 	private _currentSuggestItemInfo: SuggestItemInfo | undefined = undefined;
-	private readonly onDidChangeEmitter = new Emitter<void>();
 
-	public readonly onDidChange = this.onDidChangeEmitter.event;
+	private readonly _state = observableValue('suggestWidgetInlineCompletionProvider.state', undefined as SuggestWidgetState | undefined);
 
-	/**
-	 * Returns undefined if the suggest widget is not active.
-	*/
-	get state(): SuggestWidgetState | undefined {
-		if (!this._isActive) {
-			return undefined;
-		}
-		return { selectedItem: this._currentSuggestItemInfo };
+	public get state(): IObservable<SuggestWidgetState | undefined> {
+		return this._state;
 	}
 
 	constructor(
@@ -87,8 +95,7 @@ export class SuggestWidgetInlineCompletionProvider extends Disposable {
 							if (!normalizedSuggestItem) {
 								return undefined;
 							}
-							const valid =
-								rangeStartsWith(normalizedItemToPreselect.range, normalizedSuggestItem.range) &&
+							const valid = rangeStartsWith(normalizedItemToPreselect.range, normalizedSuggestItem.range) &&
 								normalizedItemToPreselect.insertText.startsWith(normalizedSuggestItem.insertText);
 							return { index, valid, prefixLength: normalizedSuggestItem.insertText.length, suggestItem };
 						})
@@ -142,7 +149,9 @@ export class SuggestWidgetInlineCompletionProvider extends Disposable {
 			shouldFire = true;
 		}
 		if (shouldFire) {
-			this.onDidChangeEmitter.fire();
+			transaction(tx => {
+				this._state.set(this._isActive ? { selectedItem: this._currentSuggestItemInfo } : undefined, tx);
+			});
 		}
 	}
 
@@ -208,14 +217,13 @@ function suggestionToSuggestItemInfo(suggestController: SuggestController, posit
 		return {
 			completionItemKind: item.completion.kind,
 			isSnippetText: false,
-			normalizedInlineCompletion: {
-				// Dummy element, so that space is reserved, but no text is shown
-				range: Range.fromPositions(position, position),
-				insertText: '',
-				filterText: '',
-				snippetInfo: undefined,
-				additionalTextEdits: [],
-			},
+
+			// Dummy element, so that space is reserved, but no text is shown
+			range: Range.fromPositions(position, position),
+			insertText: '',
+			filterText: '',
+			snippetInfo: undefined,
+			additionalTextEdits: [],
 		};
 	}
 
@@ -240,15 +248,14 @@ function suggestionToSuggestItemInfo(suggestController: SuggestController, posit
 	return {
 		isSnippetText,
 		completionItemKind: item.completion.kind,
-		normalizedInlineCompletion: {
-			insertText: insertText,
-			filterText: insertText,
-			range: Range.fromPositions(
-				position.delta(0, -info.overwriteBefore),
-				position.delta(0, Math.max(info.overwriteAfter, 0))
-			),
-			snippetInfo: undefined,
-			additionalTextEdits: [],
-		}
+
+		insertText: insertText,
+		filterText: insertText,
+		range: Range.fromPositions(
+			position.delta(0, -info.overwriteBefore),
+			position.delta(0, Math.max(info.overwriteAfter, 0))
+		),
+		snippetInfo: undefined,
+		additionalTextEdits: [],
 	};
 }
