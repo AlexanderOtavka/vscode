@@ -16,10 +16,13 @@ import { ThemeSettings, IWorkbenchColorTheme, IWorkbenchFileIconTheme, IColorCus
 import { IConfigurationService, ConfigurationTarget } from 'vs/platform/configuration/common/configuration';
 import { isWeb } from 'vs/base/common/platform';
 
-const DEFAULT_THEME_DARK_SETTING_VALUE = 'Default Dark+';
-const DEFAULT_THEME_LIGHT_SETTING_VALUE = 'Default Light+';
-const DEFAULT_THEME_HC_DARK_SETTING_VALUE = 'Default High Contrast';
-const DEFAULT_THEME_HC_LIGHT_SETTING_VALUE = 'Default High Contrast Light';
+export const DEFAULT_THEME_DARK_SETTING_VALUE = 'Default Dark+ Experimental';
+export const DEFAULT_THEME_LIGHT_SETTING_VALUE = 'Default Light+ Experimental';
+export const DEFAULT_THEME_HC_DARK_SETTING_VALUE = 'Default High Contrast';
+export const DEFAULT_THEME_HC_LIGHT_SETTING_VALUE = 'Default High Contrast Light';
+
+export const OLD_DEFAULT_THEME_DARK_SETTING_VALUE = 'Default Dark+';
+export const OLD_DEFAULT_THEME_LIGHT_SETTING_VALUE = 'Default Light+';
 
 const DEFAULT_FILE_ICON_THEME_SETTING_VALUE = 'vs-seti';
 
