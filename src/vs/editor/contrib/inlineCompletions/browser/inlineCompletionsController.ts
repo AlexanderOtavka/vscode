@@ -3,13 +3,16 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { Event } from 'vs/base/common/event';
 import { Disposable } from 'vs/base/common/lifecycle';
 import { constObservable, observableValue } from 'vs/base/common/observable';
+import { ITransaction, disposableObservableValue, transaction } from 'vs/base/common/observableImpl/base';
 import { ICodeEditor } from 'vs/editor/browser/editorBrowser';
-import { ITextModel } from 'vs/editor/common/model';
-import { GhostText, GhostTextPart, GhostTextReplacement } from 'vs/editor/contrib/inlineCompletions/browser/ghostText';
+import { Position } from 'vs/editor/common/core/position';
+import { CursorChangeReason } from 'vs/editor/common/cursorEvents';
 import { GhostTextWidget } from 'vs/editor/contrib/inlineCompletions/browser/ghostTextWidget';
-import { SuggestController } from 'vs/editor/contrib/suggest/browser/suggestController';
+import { InlineCompletionModel } from 'vs/editor/contrib/inlineCompletions/browser/inlineCompletionModel';
+import { SuggestWidgetAdaptor } from 'vs/editor/contrib/inlineCompletions/browser/suggestWidgetInlineCompletionProvider';
 import { IContextKeyService } from 'vs/platform/contextkey/common/contextkey';
 import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
 
@@ -20,15 +23,20 @@ export class InlineCompletionController extends Disposable {
 		return editor.getContribution<InlineCompletionController>(InlineCompletionController.ID);
 	}
 
-	private readonly ghostText = observableValue<GhostText | GhostTextReplacement | undefined>('ghostText', new GhostText(2, [
-		new GhostTextPart(1, ['hello', 'welt'], false)
-	], 0));
-	private readonly targetTextModel = observableValue<ITextModel | undefined>('ghostText', undefined);
+	private readonly suggestWidgetAdaptor = new SuggestWidgetAdaptor(
+		this.editor,
+		() => this.model.get()?.currentInlineCompletion.get()?.toInlineCompletion(),
+		(tx) => this.updateObservables(tx)
+	);
+
+	private readonly textModelVersionId = observableValue<number>('textModelVersionId', -1);
+	private readonly cursorPosition = observableValue<Position>('cursorPosition', new Position(1, 1));
+	private readonly model = disposableObservableValue<InlineCompletionModel | undefined>('textModelVersionId', undefined);
 
 	private ghostTextWidget = this.instantiationService.createInstance(GhostTextWidget, this.editor, {
-		ghostText: this.ghostText,
+		ghostText: this.model.map((v, reader) => v?.ghostText.read(reader)),
 		minReservedLineCount: constObservable(0),
-		targetTextModel: this.targetTextModel,
+		targetTextModel: this.model.map(v => v?.textModel),
 	});
 
 	constructor(
@@ -38,15 +46,36 @@ export class InlineCompletionController extends Disposable {
 	) {
 		super();
 
-		const suggestController = SuggestController.get(this.editor);
+		this._register(Event.runAndSubscribe(editor.onDidChangeModel, () => transaction(tx => {
+			this.model.set(undefined, tx); // This disposes the model
+			this.updateObservables(tx);
+			const textModel = editor.getModel();
+			if (textModel) {
+				const model = new InlineCompletionModel(textModel, this.suggestWidgetAdaptor.selectedItem, this.cursorPosition, this.textModelVersionId, instantiationService);
+				this.model.set(model, tx);
+			}
+		})));
 
-		this.targetTextModel.set(editor.getModel() ?? undefined, undefined);
-		editor.onDidChangeModel(e => {
-			this.targetTextModel.set(editor.getModel()!, undefined);
-		});
+		this._register(editor.onDidChangeModelContent(e => transaction(tx =>
+			this.updateObservables(tx)
+		)));
 
+		editor.onDidChangeCursorPosition(e => transaction(tx => {
+			this.updateObservables(tx);
+			if (e.reason === CursorChangeReason.Explicit) {
+				this.model.get()?.clear(tx);
+			}
+		}));
 
+		editor.onDidType(() => transaction(tx => {
+			this.updateObservables(tx);
+			this.model.get()?.trigger(tx);
+		}));
 	}
 
-
+	private updateObservables(tx: ITransaction): void {
+		const newModel = this.editor.getModel();
+		this.textModelVersionId.set(newModel?.getVersionId() ?? -1, tx);
+		this.cursorPosition.set(this.editor.getPosition() ?? new Position(1, 1), tx);
+	}
 }

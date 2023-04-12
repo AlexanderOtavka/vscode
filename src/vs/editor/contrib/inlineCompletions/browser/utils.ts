@@ -4,13 +4,12 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { BugIndicatingError } from 'vs/base/common/errors';
-import { DisposableStore } from 'vs/base/common/lifecycle';
+import { DisposableStore, IDisposable } from 'vs/base/common/lifecycle';
 import { IObservable, autorun } from 'vs/base/common/observable';
 import { ICodeEditor } from 'vs/editor/browser/editorBrowser';
 import { Position } from 'vs/editor/common/core/position';
 import { IRange, Range } from 'vs/editor/common/core/range';
 import { IModelDeltaDecoration } from 'vs/editor/common/model';
-import { IDisposable } from 'xterm';
 
 export function applyEdits(text: string, edits: { range: IRange; text: string }[]): string {
 	const transformer = new PositionOffsetTransformer(text);
@@ -87,4 +86,11 @@ export function applyObservableDecorations(editor: ICodeEditor, decorations: IOb
 		}
 	});
 	return d;
+}
+
+export function rangeExtends(extendingRange: Range, rangeToExtend: Range): boolean {
+	return extendingRange.startLineNumber === rangeToExtend.startLineNumber &&
+		extendingRange.startColumn === rangeToExtend.startColumn &&
+		((extendingRange.endLineNumber === rangeToExtend.endLineNumber && extendingRange.endColumn >= rangeToExtend.endColumn)
+			|| extendingRange.endLineNumber > rangeToExtend.endLineNumber);
 }

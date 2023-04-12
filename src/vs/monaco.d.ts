@@ -6754,24 +6754,21 @@ declare namespace monaco.languages {
 		Explicit = 1
 	}
 
-	export class InlineCompletionContext {
+	export interface InlineCompletionContext {
 		/**
 		 * How the completion was triggered.
 		 */
 		readonly triggerKind: InlineCompletionTriggerKind;
 		readonly selectedSuggestionInfo: SelectedSuggestionInfo | undefined;
-		constructor(
-			/**
-			 * How the completion was triggered.
-			 */
-		triggerKind: InlineCompletionTriggerKind, selectedSuggestionInfo: SelectedSuggestionInfo | undefined);
 	}
 
-	export interface SelectedSuggestionInfo {
+	export class SelectedSuggestionInfo {
 		readonly range: IRange;
 		readonly text: string;
-		readonly isSnippetText: boolean;
 		readonly completionKind: CompletionItemKind;
+		readonly isSnippetText: boolean;
+		constructor(range: IRange, text: string, completionKind: CompletionItemKind, isSnippetText: boolean);
+		equals(other: SelectedSuggestionInfo): boolean;
 	}
 
 	export interface InlineCompletion {

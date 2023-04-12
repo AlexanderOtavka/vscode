@@ -36,6 +36,17 @@ export class GhostTextWidget extends Disposable {
 	private readonly isDisposed = observableValue('isDisposed', false);
 	private readonly currentTextModel = observableFromEvent(this.editor.onDidChangeModel, () => this.editor.getModel());
 
+	constructor(
+		private readonly editor: ICodeEditor,
+		private readonly model: IGhostTextWidgetModel,
+		@ILanguageService private readonly languageService: ILanguageService,
+	) {
+		super();
+
+		this._register(toDisposable(() => { this.isDisposed.set(true, undefined); }));
+		this._register(applyObservableDecorations(this.editor, this.decorations));
+	}
+
 	private readonly uiState = derived('uiState', reader => {
 		if (this.isDisposed.read(reader)) {
 			return undefined;
@@ -102,7 +113,7 @@ export class GhostTextWidget extends Disposable {
 			addToAdditionalLines([textBufferLine.substring(lastIdx)], undefined);
 		}
 
-		const hiddenRange = hiddenTextStartColumn !== undefined ? new ColumnRange(hiddenTextStartColumn, textBufferLine.length) : undefined;
+		const hiddenRange = hiddenTextStartColumn !== undefined ? new ColumnRange(hiddenTextStartColumn, textBufferLine.length + 1) : undefined;
 
 		return {
 			replacedRange,
@@ -166,17 +177,6 @@ export class GhostTextWidget extends Disposable {
 			})
 		)
 	);
-
-	constructor(
-		private readonly editor: ICodeEditor,
-		private readonly model: IGhostTextWidgetModel,
-		@ILanguageService private readonly languageService: ILanguageService,
-	) {
-		super();
-
-		this._register(toDisposable(() => { this.isDisposed.set(true, undefined); }));
-		this._register(applyObservableDecorations(this.editor, this.decorations));
-	}
 
 	public ownsViewZone(viewZoneId: string): boolean {
 		return this.additionalLinesWidget.viewZoneId === viewZoneId;

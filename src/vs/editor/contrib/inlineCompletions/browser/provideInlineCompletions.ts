@@ -15,6 +15,7 @@ import { Command, InlineCompletion, InlineCompletionContext, InlineCompletions, 
 import { ILanguageConfigurationService } from 'vs/editor/common/languages/languageConfigurationRegistry';
 import { ITextModel } from 'vs/editor/common/model';
 import { fixBracketsInLine } from 'vs/editor/common/model/bracketPairsTextModelPart/fixBrackets';
+import { Replacement } from 'vs/editor/contrib/inlineCompletions/browser/inlineCompletionToGhostText';
 import { getReadonlyEmptyArray } from 'vs/editor/contrib/inlineCompletions/browser/utils';
 import { SnippetParser, Text } from 'vs/editor/contrib/snippet/browser/snippetParser';
 
@@ -39,19 +40,19 @@ export async function provideInlineCompletions(
 
 	const defaultReplaceRange = getDefaultRange(position, model);
 	const itemsByHash = new Map<string, InlineCompletionItem>();
-	const resultMap = new Map<InlineCompletionsProvider, InlineCompletions>();
+	const lists: InlineCompletionList[] = [];
 	for (const result of providerResults) {
 		const completions = result.completions;
 		if (!completions) {
 			continue;
 		}
-		resultMap.set(result.provider, completions);
+		const list = new InlineCompletionList(completions, result.provider);
+		lists.push(list);
 
 		for (const item of completions.items) {
 			const inlineCompletionItem = InlineCompletionItem.from(
 				item,
-				result.provider,
-				completions,
+				list,
 				defaultReplaceRange,
 				model,
 				languageConfigurationService
@@ -60,7 +61,7 @@ export async function provideInlineCompletions(
 		}
 	}
 
-	return new InlineCompletionProviderResult(Array.from(itemsByHash.values()), resultMap, context);
+	return new InlineCompletionProviderResult(Array.from(itemsByHash.values()), lists);
 }
 
 export class InlineCompletionProviderResult implements IDisposable {
@@ -68,19 +69,43 @@ export class InlineCompletionProviderResult implements IDisposable {
 		/**
 		 * Free of duplicates.
 		 */
-		public readonly completions: InlineCompletionItem[],
-		/**
-		 * Tracks which provider produced which result.
-		 * This is important for disposing.
-		 */
-		private readonly providerResults: Map<InlineCompletionsProvider, InlineCompletions>,
-		public readonly context: InlineCompletionContext,
-	) {
+		public readonly completions: readonly InlineCompletionItem[],
+		private readonly providerResults: readonly InlineCompletionList[],
+	) { }
+
+	public withExternalInlineCompletion(inlineCompletion: InlineCompletionItem): InlineCompletionProviderResult {
+		return new InlineCompletionProviderResult(
+			[inlineCompletion].concat(this.completions),
+			[inlineCompletion.source].concat(this.providerResults),
+		);
 	}
 
 	dispose(): void {
-		for (const [provider, list] of this.providerResults) {
-			provider.freeInlineCompletions(list);
+		for (const result of this.providerResults) {
+			result.removeRef();
+		}
+	}
+}
+
+/**
+ * A ref counted pointer to the computed `InlineCompletions` and the `InlineCompletionsProvider` that
+ * computed them.
+ */
+export class InlineCompletionList {
+	private refCount = 0;
+	constructor(
+		public readonly inlineCompletions: InlineCompletions,
+		public readonly provider: InlineCompletionsProvider,
+	) { }
+
+	addRef(): void {
+		this.refCount++;
+	}
+
+	removeRef(): void {
+		this.refCount--;
+		if (this.refCount === 0) {
+			this.provider.freeInlineCompletions(this.inlineCompletions);
 		}
 	}
 }
@@ -88,8 +113,7 @@ export class InlineCompletionProviderResult implements IDisposable {
 export class InlineCompletionItem {
 	public static from(
 		inlineCompletion: InlineCompletion,
-		sourceProvider: InlineCompletionsProvider,
-		sourceInlineCompletions: InlineCompletions,
+		source: InlineCompletionList,
 		defaultReplaceRange: Range,
 		textModel: ITextModel,
 		languageConfigurationService: ILanguageConfigurationService | undefined,
@@ -158,9 +182,8 @@ export class InlineCompletionItem {
 			insertText,
 			snippetInfo,
 			inlineCompletion.additionalTextEdits || getReadonlyEmptyArray(),
-			sourceProvider,
 			inlineCompletion,
-			sourceInlineCompletions,
+			source,
 		);
 	}
 
@@ -173,7 +196,6 @@ export class InlineCompletionItem {
 
 		readonly additionalTextEdits: readonly ISingleEditOperation[],
 
-		readonly sourceProvider: InlineCompletionsProvider,
 
 		/**
 		 * A reference to the original inline completion this inline completion has been constructed from.
@@ -185,15 +207,35 @@ export class InlineCompletionItem {
 		 * A reference to the original inline completion list this inline completion has been constructed from.
 		 * Used for event data to ensure referential equality.
 		*/
-		readonly sourceInlineCompletions: InlineCompletions,
-	) { }
+		readonly source: InlineCompletionList,
+	) {
+		filterText = filterText.replace(/\r\n|\r/g, '\n');
+		insertText = filterText.replace(/\r\n|\r/g, '\n');
+	}
+
+	public withRange(updatedRange: Range): InlineCompletionItem {
+		return new InlineCompletionItem(
+			this.filterText,
+			this.command,
+			updatedRange,
+			this.insertText,
+			this.snippetInfo,
+			this.additionalTextEdits,
+			this.sourceInlineCompletion,
+			this.source,
+		);
+	}
 
 	public hash(): string {
 		return JSON.stringify({ insertText: this.insertText, range: this.range.toString() });
 	}
+
+	public toReplacement(): Replacement {
+		return new Replacement(this.range, this.insertText);
+	}
 }
 
-interface SnippetInfo {
+export interface SnippetInfo {
 	snippet: string;
 	/* Could be different than the main range */
 	range: Range;
