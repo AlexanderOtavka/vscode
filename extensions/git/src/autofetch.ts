@@ -37,8 +37,10 @@ export class AutoFetcher {
 		if (this.enabled && !didInformUser) {
 			this.globalState.update(AutoFetcher.DidInformUser, true);
 		}
+		
+		const gitConfig = workspace.getConfiguration('git', Uri.file(this.repository.root));
 
-		const shouldInformUser = !this.enabled && didInformUser;
+		const shouldInformUser = !this.enabled && didInformUser && !gitConfig.has('autofetch');
 
 		if (!shouldInformUser) {
 			return;
@@ -54,7 +56,6 @@ export class AutoFetcher {
 		}
 
 		if (result === yes) {
-			const gitConfig = workspace.getConfiguration('git', Uri.file(this.repository.root));
 			gitConfig.update('autofetch', true, ConfigurationTarget.Global);
 		}
 
